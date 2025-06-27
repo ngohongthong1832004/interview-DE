@@ -1,5 +1,5 @@
 ---
-title: report_b01
+title: B01_Vector_Database_Tutorial
 ---
 
 # Vector Database Tutorial

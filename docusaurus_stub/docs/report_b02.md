@@ -1,5 +1,5 @@
 ---
-title: report_b02
+title: B02_LiteLLM_and_LangGraph_Analysis
 ---
 
 # LiteLLM and LangGraph Analysis

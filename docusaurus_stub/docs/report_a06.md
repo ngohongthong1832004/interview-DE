@@ -1,5 +1,5 @@
 ---
-title: report_a06
+title: A06_Rapid_Analytics_Solution
 ---
 
 # Rapid Analytics Solution
@@ -13,27 +13,27 @@ title: report_a06
 
 ---
 
-- **Purpose**: Design a rapid-deployment analytics solution for immediate business needs while full data pipeline infrastructure is under development.
-- **Scope**: Temporary but functional system prioritizing speed and flexibility over perfect architecture.
-- **Target audience**: Business teams requiring immediate analytics, data engineers, and executives.
-- **Outcome**: A production-ready analytics platform deployable in `1-2` weeks with migration path to full infrastructure.
+- **Purpose**: Deploy a rapid analytics solution to meet immediate business needs while awaiting full pipeline (A01+A02+A03 or A05).
+- **Scope**: Temporary, serverless system with flexibility, integrated with A01 (VPC, EFS, FreeIPA, IAM) and A04b (AppsFlyer).
+- **Target Audience**: Business teams, data engineers, DevOps, executives.
+- **Outcome**: Functional analytics platform deployable in 1-2 weeks, with migration path to A05.
 
 #### Key Requirements
 
-- **Speed over perfection**: Deploy in days/weeks rather than months.
-- **Temporary nature**: Designed for replacement by full pipeline later (A01+A02+A03 or A05).
-- **Business priority**: Satisfy immediate analytics requests while buying time for proper infrastructure.
-- **Flexibility focus**: Easy accommodation of various business team requests and changing requirements.
-- **Migration path**: Clear transition strategy to comprehensive data platform.
+- **Speed Over Perfection**: Deploy within days, prioritizing usability.
+- **Temporary Nature**: Replaceable by A05 pipeline.
+- **Business Priority**: Satisfy >90% immediate analytics requests.
+- **Flexibility**: Adapt to changing business needs.
+- **Migration Path**: Seamless transition to A05 with no data loss.
 
 ---
 
 #### Success Metrics
 
-- **Deployment speed**: Fully operational within `2` weeks of project start.
-- **Business satisfaction**: `>90%` of immediate analytics requests fulfilled.
-- **Cost efficiency**: `<50%` cost of full infrastructure during interim period.
-- **Migration readiness**: Seamless transition to full pipeline with minimal data loss.
+- **Deployment Speed**: Operational in 2 weeks.
+- **Business Satisfaction**: >90% analytics requests fulfilled.
+- **Cost Efficiency**: &lt;50% cost of A05 (~$1800/month).
+- **Migration Readiness**: Zero data loss during transition.
 
 ---
 
@@ -48,40 +48,49 @@ title: report_a06
 
 ---
 
-- **Architecture approach**: Cloud-native serverless components with managed services for minimal operational overhead.
-- **Core components**:
-  - Data ingestion: AWS Lambda functions with API Gateway for flexible data source integration.
-  - Storage layer: Amazon S3 data lake with simple partitioning scheme.
-  - Processing engine: AWS Glue for ETL jobs and data transformation.
-  - Analytics frontend: Amazon QuickSight for business intelligence dashboards.
-- **Integration flexibility**: Support for both streaming and batch data sources with unified processing.
+- **Architecture Approach**: Serverless with AWS managed services for minimal overhead.
+- **Core Components**:
+  - **Ingestion**: API Gateway + Lambda for streaming/batch data.
+  - **Storage**: S3 data lake with simplified partitioning.
+  - **Processing**: Glue ETL for data transformation.
+  - **Analytics**: QuickSight for business dashboards.
+- **A01 Integration**: Uses VPC (10.0.0.0/16), EFS (/data/analytics), FreeIPA, IAM.
+- **A04b Integration**: Ingests AppsFlyer data via S2S API/webhook.
 
 #### Serverless Architecture Benefits
 
-- **Zero infrastructure management**: Fully managed services eliminate operational overhead.
-- **Automatic scaling**: Pay-per-use model with infinite scalability for varying workloads.
-- **Rapid deployment**: Infrastructure-as-code deployment in `<1` day.
-- **Cost optimization**: No idle resource costs during low-usage periods.
-
----
+- **Zero Management**: Managed services (Lambda, Glue, QuickSight).
+- **Auto-Scaling**: Pay-per-use, handles variable workloads.
+- **Rapid Deployment**: &lt;1 day with Terraform.
+- **Cost**: ~$900/month, &lt;50% of A05.
 
 #### Component Integration
 
-- **Data flow architecture**:
+- **Data Flow**:
   ```mermaid
   graph TD
-    A[Data Sources] --> B[API Gateway]
-    B --> C[Lambda Ingestion]
-    C --> D[S3 Data Lake]
-    D --> E[Glue ETL Jobs]
-    E --> F[Processed Data]
-    F --> G[QuickSight]
-    G --> H[Business Dashboards]
-    
-    I[Scheduled Data] --> J[EventBridge]
-    J --> E
+    A[AppsFlyer S2S/Webhook] -->|443| B[API Gateway]
+    A -->|CSV Upload| C[S3:data-platform-raw]
+    B -->|FreeIPA Auth| D[FreeIPA from A01]
+    B -->|Lambda| E[Lambda Ingestion]
+    E -->|443| C
+    C -->|S3 Events| F[Glue ETL]
+    F -->|443| G[S3:data-platform-processed]
+    G -->|QuickSight API| H[QuickSight]
+    H -->|IAM Roles| I[IAM from A01]
+    F -->|2049| J[EFS:/data/analytics]
+    K[EventBridge] -->|Cron| F
   ```
-- **Service integration**: Loose coupling between components for easy modification and scaling.
+- **Schema**:
+  ```sql
+  CREATE EXTERNAL TABLE analytics_raw (
+    event_id STRING, user_id STRING, event_type STRING,
+    campaign_id STRING, timestamp TIMESTAMP, revenue DECIMAL(10,2)
+  )
+  PARTITIONED BY (event_date DATE)
+  STORED AS PARQUET
+  LOCATION 's3://data-platform-raw/';
+  ```
 
 ---
 
@@ -96,44 +105,76 @@ title: report_a06
 
 ---
 
-- **Integration strategy**: Unified API layer supporting REST, webhooks, file uploads, and database connections.
-- **Data source types**: External APIs (AppsFlyer, Google Analytics), database exports, CSV uploads, real-time streams.
-- **Format flexibility**: Support for JSON, CSV, Parquet, and custom formats with automatic schema detection.
-- **Connector library**: Pre-built integrations for common business tools and data sources.
+- **Integration Strategy**: Unified API layer for AppsFlyer, Google Analytics, CSV, databases.
+- **Data Sources**:
+  - **Streaming**: AppsFlyer S2S/webhook, REST APIs.
+  - **Batch**: CSV uploads, MySQL/PostgreSQL exports.
+- **Formats**: JSON, CSV, Parquet, auto-schema detection.
+- **A01 Integration**: FreeIPA for auth, EFS for logs, IAM for access.
 
 #### API Gateway Configuration
 
-- **Flexible endpoints**: RESTful APIs for different data source types and formats.
-- **Authentication**: Multiple auth methods (API keys, OAuth, IAM roles) for diverse source requirements.
-- **Rate limiting**: Configurable limits per data source to prevent overload.
-- **Data validation**: Schema validation and data quality checks at ingestion point.
-- **Example endpoint configuration**:
+- **Endpoints**:
   ```yaml
   endpoints:
-    - path: /ingest/appsflyer
+    appsflyer:
+      path: /ingest/appsflyer
       method: POST
-      auth: api_key
-      rate_limit: 1000/minute
-      
-    - path: /ingest/csv
-      method: POST  
+      auth: freeipa_ldap
+      rate_limit: 10000/minute
+    csv:
+      path: /ingest/csv
+      method: POST
       auth: iam_role
       max_file_size: 100MB
-      
-    - path: /ingest/realtime
-      method: POST
-      auth: oauth
-      rate_limit: 10000/minute
+  ```
+- **Lambda Ingestion**:
+  ```python
+  import boto3, json
+  s3 = boto3.client('s3')
+  def lambda_handler(event, context):
+      if not validate_freeipa_token(event['headers']['Authorization']):
+          return {'statusCode': 401}
+      data = json.loads(event['body'])
+      s3.put_object(
+          Bucket='data-platform-raw',
+          Key=f"raw/{data['event_date']}/{data['event_id']}.json",
+          Body=json.dumps(data)
+      )
+      return {'statusCode': 200}
   ```
 
----
+#### Batch Processing
 
-#### Batch Processing Integration
+- **S3 Events**:
+  ```hcl
+  resource "aws_s3_bucket_notification" "raw_data" {
+    bucket = "data-platform-raw"
+    lambda_function {
+      lambda_function_arn = aws_lambda_function.etl.arn
+      events = ["s3:ObjectCreated:*"]
+    }
+  }
+  ```
+- **EventBridge**:
+  ```hcl
+  resource "aws_cloudwatch_event_rule" "daily_etl" {
+    name = "daily-etl"
+    schedule_expression = "cron(0 2 * * ? *)"
+    event_target {
+      arn = aws_lambda_function.etl.arn
+    }
+  }
+  ```
 
-- **File processing**: Automated S3 event triggers for uploaded files.
-- **Database connections**: Scheduled extracts from MySQL, PostgreSQL, and external APIs.
-- **ETL scheduling**: EventBridge cron schedules for regular data processing.
-- **Error handling**: Retry logic and dead letter queues for failed processing jobs.
+#### Error Handling
+
+- **DLQ**:
+  ```python
+  sqs = boto3.client('sqs')
+  def handle_error(data, error):
+      sqs.send_message(QueueUrl='dlq-url', MessageBody=json.dumps({'data': data, 'error': str(error)}))
+  ```
 
 ---
 
@@ -148,34 +189,50 @@ title: report_a06
 
 ---
 
-- **Dashboard strategy**: Self-service analytics with pre-built templates and custom visualization capabilities.
-- **User experience**: Intuitive interface requiring minimal training for business users.
-- **Template library**: Common business scenarios (marketing analytics, sales dashboards, operational metrics).
-- **Customization**: Drag-and-drop interface for report creation and modification.
+- **Strategy**: QuickSight with pre-built templates, drag-and-drop UX.
+- **Templates**: Marketing (campaign ROI), sales (revenue), operations (system health).
+- **Access Control**: FreeIPA LDAP, IAM roles (`QuickSightRole`).
+- **Mobile**: Responsive dashboards.
 
-#### QuickSight Implementation
+#### QuickSight Configuration
 
-- **User management**: Integration with existing Active Directory/SSO for seamless access.
-- **Dashboard templates**: Pre-configured dashboards for immediate business value.
-- **Data preparation**: Visual ETL interface for business users to create custom datasets.
-- **Mobile accessibility**: Responsive design for tablet and mobile access.
+- **Dataset**:
+  ```sql
+  CREATE EXTERNAL TABLE analytics_processed (
+    event_date DATE, campaign_id STRING, installs INT, revenue DECIMAL(10,2)
+  )
+  STORED AS PARQUET
+  LOCATION 's3://data-platform-processed/';
+  ```
+- **Configuration**:
+  ```yaml
+  datasets:
+    processed:
+      source: s3://data-platform-processed
+      refresh: 1 hour
+      query: SELECT * FROM analytics_processed WHERE event_date >= CURRENT_DATE - INTERVAL '7' DAY
+  ```
 
----
+#### Templates
 
-#### Template Categories
+- **Marketing**:
+  ```yaml
+  visuals:
+    - type: line
+      metrics: [installs, revenue]
+      dimensions: [event_date, campaign_id]
+  ```
+- **Sales**: Revenue forecasts, customer segments.
+- **Operations**: Latency, error rates.
 
-- **Marketing analytics**:
-  - Campaign performance tracking and ROI analysis.
-  - Customer acquisition costs and lifetime value metrics.
-  - Attribution modeling and conversion funnel analysis.
-- **Sales dashboards**:
-  - Revenue tracking and forecasting.
-  - Sales pipeline analysis and team performance metrics.
-  - Customer segmentation and behavior analysis.
-- **Operational metrics**:
-  - System performance and uptime monitoring.
-  - Resource utilization and cost tracking.
-  - Process efficiency and quality metrics.
+#### Validation
+
+- **Satisfaction Test**:
+  ```python
+  def survey_satisfaction():
+      responses = collect_user_feedback()
+      return sum(1 for r in responses if r['satisfied']) / len(responses) * 100 > 90
+  ```
 
 ---
 
@@ -190,38 +247,55 @@ title: report_a06
 
 ---
 
-- **Deployment timeline**: `5` days infrastructure setup + `5` days configuration and testing.
-- **Automation level**: `90%` automated deployment using CloudFormation and scripts.
-- **Prerequisites**: AWS account, basic networking setup, user authentication system.
-- **Skill requirements**: One DevOps engineer and one data analyst for complete setup.
+- **Timeline**: 10 days (5 days infra, 5 days config/testing).
+- **Automation**: Terraform/Ansible, 90% automated.
+- **Prerequisites**: A01 VPC, FreeIPA, IAM; A04b AppsFlyer.
 
-#### Week 1: Infrastructure Deployment
+#### Week 1: Infrastructure
 
-- **Day 1-2**: CloudFormation stack deployment and core services setup.
-  ```bash
-  # Deploy core infrastructure
-  aws cloudformation create-stack \
-    --stack-name rapid-analytics \
-    --template-body file://rapid-analytics.yaml \
-    --capabilities CAPABILITY_IAM
+- **Day 1-2**: Deploy API Gateway, Lambda, S3, Glue.
+  ```hcl
+  resource "aws_lambda_function" "ingestion" {
+    function_name = "analytics-ingestion"
+    handler = "lambda.handler"
+    runtime = "python3.9"
+    role = aws_iam_role.lambda_role.arn
+  }
+  resource "aws_glue_job" "etl" {
+    name = "analytics-etl"
+    role_arn = aws_iam_role.glue_role.arn
+    command { script_location = "s3://data-platform-scripts/etl.py" }
+  }
   ```
-- **Day 3**: Data source connector configuration and API Gateway setup.
-- **Day 4**: QuickSight workspace setup and initial template deployment.
-- **Day 5**: User access configuration and basic testing.
+- **Day 3**: Configure API Gateway, AppsFlyer webhook.
+  ```bash
+  aws apigateway create-resource --rest-api-id <api-id> --path-part events
+  ```
+- **Day 4-5**: Setup QuickSight, templates, test.
+  ```bash
+  aws quicksight create-data-set --aws-account-id <account> --data-set-id analytics
+  ```
 
----
+#### Week 2: Configuration/Testing
 
-#### Week 2: Configuration and Testing
+- **Day 6-7**: Ansible for Lambda, Glue scripts, dashboard config.
+  ```yaml
+  - hosts: analytics_nodes
+    tasks:
+      - name: Deploy ETL script
+        copy:
+          src: etl.py
+          dest: /opt/scripts/etl.py
+  ```
+- **Day 8-10**: User training, feedback, production go-live.
+  ```bash
+  aws quicksight create-dashboard --dashboard-id analytics-prod
+  ```
 
-- **Day 6-7**: Business dashboard template customization and data source integration.
-- **Day 8-9**: User training and feedback incorporation.
-- **Day 10**: Production deployment and go-live preparation.
+#### Validation
 
-#### Automation Scripts
-
-- **Infrastructure deployment**: Complete CloudFormation template for one-click deployment.
-- **Configuration scripts**: Python scripts for data source setup and dashboard creation.
-- **Testing automation**: Automated data validation and dashboard functionality testing.
+- **Speed**: Deploy in &lt;10 days (test: `aws cloudformation describe-stacks`).
+- **Satisfaction**: >90% requests fulfilled (survey script).
 
 ---
 
@@ -236,33 +310,37 @@ title: report_a06
 
 ---
 
-- **Migration timeline**: Planned transition over `4-6` weeks with zero data loss.
-- **Data preservation**: Complete historical data migration to new platform architecture.
-- **User transition**: Gradual user migration with training and support.
-- **System overlap**: Parallel operation period for validation and risk mitigation.
+- **Timeline**: 4-6 weeks, zero data loss.
+- **Phases**:
+  - **Week 1-2**: Deploy A05 (Kinesis, Flink) alongside.
+  - **Week 3-4**: Sync S3 data, validate.
+  - **Week 5**: Migrate users, recreate dashboards.
+  - **Week 6**: Decommission rapid solution.
+- **Data Migration**:
+  ```python
+  s3_client = boto3.client('s3')
+  def migrate_data():
+      objects = s3_client.list_objects(Bucket='data-platform-raw')
+      for obj in objects['Contents']:
+          s3_client.copy_object(
+              Bucket='data-platform-streaming',
+              Key=obj['Key'],
+              CopySource={'Bucket': 'data-platform-raw', 'Key': obj['Key']}
+          )
+      return validate_data_migration()
+  ```
+- **Validation**:
+  ```python
+  def validate_data_migration():
+      raw_count = athena_query("SELECT COUNT(*) FROM analytics_raw")
+      streaming_count = athena_query("SELECT COUNT(*) FROM streaming_data")
+      return raw_count == streaming_count
+  ```
 
-#### Migration Strategy
+#### User Transition
 
-- **Phase 1**: Full pipeline deployment alongside rapid solution.
-- **Phase 2**: Data synchronization and validation between systems.
-- **Phase 3**: User migration with dashboard recreation in new system.
-- **Phase 4**: Rapid solution decommissioning and resource cleanup.
-
----
-
-#### Data Migration Process
-
-- **Historical data**: S3-to-S3 transfer with format conversion if required.
-- **Schema mapping**: Automated mapping between rapid solution and full pipeline schemas.
-- **Validation procedures**: Data quality checks and reconciliation reports.
-- **Rollback plan**: Ability to revert to rapid solution if migration issues occur.
-
-#### User Change Management
-
-- **Training programs**: Hands-on training for new platform capabilities.
-- **Documentation**: Updated user guides and video tutorials.
-- **Support structure**: Dedicated support during transition period.
-- **Feedback integration**: User feedback incorporation for platform improvements.
+- **Training**: Hands-on sessions, Confluence guides.
+- **Support**: Slack channel for migration issues.
 
 ---
 
@@ -277,26 +355,17 @@ title: report_a06
 
 ---
 
-- **Cost structure**: Pay-per-use model with predictable monthly costs `<$5,000` for typical workloads.
-- **Cost optimization**: Automatic scaling and serverless architecture minimize idle resource costs.
-- **Budget controls**: CloudWatch billing alerts and resource usage monitoring.
-- **Cost comparison**: `50-70%` lower costs compared to full infrastructure solution.
-
-#### Service Costs
-
-- **Lambda functions**: `$0.20` per `1M` requests + compute time.
-- **S3 storage**: `$0.023` per GB standard storage + transfer costs.
-- **Glue ETL**: `$0.44` per DPU hour for data processing jobs.
-- **QuickSight**: `$5` per user per month for standard edition.
-
----
-
-#### Cost Monitoring
-
-- **Budget alerts**: Automated notifications at `50%`, `80%`, and `100%` of monthly budget.
-- **Resource optimization**: Weekly cost reviews and right-sizing recommendations.
-- **Usage analytics**: Detailed cost breakdown by service and data source.
-- **Forecast modeling**: Predictive cost analysis for growth planning.
+- **Cost**: ~$900/month (<50% of A05 $1800/month).
+- **Breakdown**:
+  - Lambda: $0.20/1M requests (~$100/month).
+  - S3: $0.023/GB (~$50/month).
+  - Glue: $0.44/DPU-hour (~$200/month).
+  - QuickSight: $5/user/month (~$150/month for 30 users).
+- **Alerts**:
+  ```bash
+  aws budgets create-budget --account-id <account> --budget-name analytics-budget \
+      --budget-limit 900
+  ```
 
 ---
 
@@ -311,42 +380,23 @@ title: report_a06
 
 ---
 
-- **Infrastructure**: AWS serverless services for maximum agility and minimal maintenance.
-- **Data processing**: AWS Glue for ETL, Lambda for real-time processing.
-- **Storage**: S3 with intelligent tiering for cost optimization.
-- **Analytics**: QuickSight for business intelligence with Athena for ad-hoc queries.
-- **Monitoring**: CloudWatch for system monitoring and cost tracking.
-
-#### Service Configuration
-
-- **AWS Lambda**:
+- **Infrastructure**: Lambda, API Gateway, S3, Glue, QuickSight.
+- **Processing**:
   ```python
   import boto3
-  import json
-  
-  def lambda_handler(event, context):
-      # Generic data ingestion function
-      s3 = boto3.client('s3')
-      
-      # Process incoming data
-      processed_data = transform_data(event['body'])
-      
-      # Store in S3 data lake
-      s3.put_object(
-          Bucket='rapid-analytics-data',
-          Key=f"raw/{datetime.now().strftime('%Y/%m/%d')}/{uuid4()}.json",
-          Body=json.dumps(processed_data)
+  glue = boto3.client('glue')
+  def etl_job():
+      glue.start_job_run(JobName='analytics-etl')
+  ```
+- **Monitoring**:
+  ```python
+  cloudwatch = boto3.client('cloudwatch')
+  def report_metrics():
+      cloudwatch.put_metric_data(
+          Namespace='RapidAnalytics',
+          MetricData=[{'MetricName': 'RequestLatency', 'Value': measure_latency(), 'Unit': 'Seconds'}]
       )
   ```
-
----
-
-#### Integration Patterns
-
-- **Event-driven processing**: S3 events trigger Glue jobs for automated data processing.
-- **API-first design**: All components accessible via REST APIs for maximum integration flexibility.
-- **Schema evolution**: Support for changing data formats without breaking existing dashboards.
-- **Backup strategy**: Automated S3 versioning and cross-region replication for data protection.
 
 ---
 
@@ -361,18 +411,17 @@ title: report_a06
 
 ---
 
-- [x] YAML front matter present with `report_a06` title.
+- [x] YAML front matter with `report_a06` title.
 - [x] Each subsection (###) contains one details block.
 - [x] Main sections (##) separated by `---`.
 - [x] No separators between ### sections.
-- [x] Details blocks start and end with `---`.
+- [x] Details blocks start/end with `---`.
 - [x] Subsubsections (####) separated by `---`.
-- [x] Summary text is descriptive and specific.
-- [x] All content formatted as bullet points.
-- [x] Block elements (code, YAML) indented by `2` spaces.
+- [x] Summary text descriptive and specific.
+- [x] Content formatted as bullet points.
+- [x] Code blocks indented by 2 spaces with language specification.
 - [x] No numbered headings or bullet points.
-- [x] Technical symbols wrapped in backticks (e.g., `1-2`).
-- [x] Code blocks include language specification (e.g., `yaml`, `python`).
+- [x] Technical symbols in backticks (e.g., `1-2`).
 
 ---
 
